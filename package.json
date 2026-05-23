@@ -1,0 +1,66 @@
+{
+  "name": "leonardoai-mcp",
+  "version": "0.1.0",
+  "description": "Public-ready Model Context Protocol server for Leonardo AI image generation, polling, and image downloads.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bespokeaistudios/leonardoai-mcp.git"
+  },
+  "homepage": "https://github.com/bespokeaistudios/leonardoai-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/bespokeaistudios/leonardoai-mcp/issues",
+    "email": "support@bespokeaistudios.com"
+  },
+  "bin": {
+    "leonardoai-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "scripts",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke:mcp": "npm run build && node scripts/smoke-mcp.mjs"
+  },
+  "keywords": [
+    "image-generation",
+    "leonardo",
+    "leonardo-ai",
+    "leonardo-ai-api",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "stdio"
+  ],
+  "author": "Bespoke AI Studios (https://bespokeaistudios.com)",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

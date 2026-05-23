@@ -1,0 +1,10 @@
+mcp_servers:
+  leonardo:
+    command: "node"
+    args: ["/absolute/path/to/leonardoai-mcp/dist/index.js"]
+    env:
+      LEONARDO_AI_API: "${LEONARDO_AI_API}"
+      # Optional override; omit unless Leonardo changes the REST base URL.
+      # LEONARDO_API_BASE_URL: "https://cloud.leonardo.ai/api/rest/v1"
+    timeout: 300
+    connect_timeout: 60
