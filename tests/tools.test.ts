@@ -177,7 +177,7 @@ describe('tool handlers', () => {
   it('upload_init_image calls createInitImage with extension and extracts response fields', async () => {
     const client = {
       createInitImage: vi.fn(async () => ({
-        initImage: { id: 'init-abc', url: 'https://s3.example.com/upload', fields: { key: 'images/img.png' } },
+        uploadInitImage: { id: 'init-abc', url: 'https://s3.example.com/upload', fields: { key: 'images/img.png' } },
       })),
     } as any;
     const handlers = createToolHandlers(client);
@@ -221,9 +221,9 @@ describe('tool handlers', () => {
 
     expect(client.createGeneration).toHaveBeenCalledWith({
       prompt: 'cyberpunk',
-      initImageId: 'init-1',
-      initGenerationImageId: 'gen-img-1',
-      initStrength: 0.7,
+      init_image_id: 'init-1',
+      init_generation_image_id: 'gen-img-1',
+      init_strength: 0.7,
       imagePrompts: ['a red car', 'a blue sky'],
       imagePromptWeight: 0.5,
     });

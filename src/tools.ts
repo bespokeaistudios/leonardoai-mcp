@@ -123,9 +123,9 @@ function toLeonardoPayload(args: GenerateImageArgs | GenerateImageAndWaitArgs): 
     ['prompt_magic', 'promptMagic'],
     ['guidance_scale', 'guidance_scale'],
     ['seed', 'seed'],
-    ['init_image_id', 'initImageId'],
-    ['init_generation_image_id', 'initGenerationImageId'],
-    ['init_strength', 'initStrength'],
+    ['init_image_id', 'init_image_id'],
+    ['init_generation_image_id', 'init_generation_image_id'],
+    ['init_strength', 'init_strength'],
     ['image_prompts', 'imagePrompts'],
     ['image_prompt_weight', 'imagePromptWeight'],
   ];
@@ -333,7 +333,7 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
 
     async upload_init_image(args: UploadInitImageArgs) {
       const raw = await client.createInitImage({ extension: args.extension });
-      const initImage = (raw.initImage ?? raw) as JsonObject;
+      const initImage = (raw.uploadInitImage ?? raw) as JsonObject;
       return {
         init_image_id: initImage.id ?? initImage.initImageId,
         url: initImage.url,
