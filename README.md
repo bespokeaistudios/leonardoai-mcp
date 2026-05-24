@@ -16,6 +16,8 @@ This is a plugin for AI assistants (Hermes, Claude, Cursor, and other MCP-compat
 | 🖼️ **Browse art styles** | See what models are available (anime, photorealistic, pixel art, RPG characters, and 40+ more) |
 | 📥 **Get images in chat** | Images appear directly in your conversation — no manual downloading or file juggling |
 | 🎛️ **Fine-tune output** | Control size, style preset, number of images, and creative parameters |
+| 🎬 **Create motion video** | Animate a still image into a short video — cinematic motion from any generation |
+| 🖌️ **Image-to-image** | Upload a reference image and generate variations, inpainting, or style transfers |
 
 <div align="center">
   <br>
@@ -105,11 +107,14 @@ For those who want to know what's under the hood:
 
 | Tool | What it does |
 |------|-------------|
-| `generate_image_and_wait` | One-call generation — sends a prompt, waits for completion, returns the image (optionally downloads to disk) |
-| `generate_image` | Fire-and-forget — starts a generation, returns immediately with an ID |
+| `generate_image_and_wait` | One-call generation — sends a prompt, waits for completion, returns the image (optionally downloads to disk). Supports image-to-image with `init_image_id` and `init_strength`. |
+| `generate_image` | Fire-and-forget — starts a generation, returns immediately with an ID. Supports reference images. |
+| `motion_generation` | 🆕 Create motion/video from an existing image — cinematic animation |
+| `upload_init_image` | 🆕 Get a presigned S3 URL to upload a reference image (for image-to-image) |
+| `get_init_image` | 🆕 Check the status of an uploaded init image |
 | `get_generation` | Check on a generation by ID — see if it's done and get image URLs |
 | `wait_for_generation` | Poll an existing generation until it finishes or times out |
-| `list_models` | List all available Leonardo models (47 at time of writing) |
+| `list_models` | List all available Leonardo models (47+ at time of writing) |
 | `download_image` | Download a single image URL to a local file |
 | `download_generation_images` | Fetch a completed generation and download all its images |
 
@@ -155,8 +160,11 @@ https://cloud.leonardo.ai/api/rest/v1
 
 The implementation uses documented/common REST paths:
 
-- `POST /generations`
+- `POST /generations` (with optional `init_image_id`, `init_strength`, `image_prompts` for image-to-image)
 - `GET /generations/{generationId}`
 - `GET /platformModels`
+- `POST /generations-motion-svd` (motion/video)
+- `POST /init-image` (upload init image)
+- `GET /init-image/{id}` (check init image status)
 
 If Leonardo changes payload names or endpoint shapes, adjust `src/leonardo-client.ts` and `src/tools.ts`, then add/extend tests first.

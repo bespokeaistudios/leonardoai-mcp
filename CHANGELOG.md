@@ -1,28 +1,20 @@
 # Changelog
 
-## 0.1.0 — Initial Release
+## [0.2.0] — 2026-05-25
 
-### Tools
-- `generate_image` — create a Leonardo image generation job
-- `get_generation` — fetch generation status and image URLs
-- `wait_for_generation` — poll a generation until completion or timeout
-- `generate_image_and_wait` — create, poll, and optionally download images in one call
-- `list_models` — list available Leonardo platform models (compact + raw)
-- `download_image` — download a single generated image URL to local disk
-- `download_generation_images` — fetch a completed generation and download all images
+### Added
+- `motion_generation` tool — create motion/video from an existing image via `POST /generations-motion-svd`
+- `upload_init_image` tool — get presigned S3 URL for init image upload via `POST /init-image`
+- `get_init_image` tool — check init image upload status via `GET /init-image/{id}`
+- Reference image params on `generate_image`: `init_image_id`, `init_generation_image_id`, `init_strength` (0-1), `image_prompts` (up to 5), `image_prompt_weight` (0-1) — enables image-to-image generation
 
-### Features
-- Stdio MCP transport for Claude Desktop, Hermes, Cursor, and other MCP clients
-- Zod-validated tool schemas with full input descriptions
-- Compact result shapes with raw API payloads preserved for debugging
-- Pinned npm dependencies for reproducible installs
-- Error response body redaction — Leonardo API errors logged to stderr only
+### Fixed
+- Live-tested all new endpoints against Leonardo API, fixed `init_*` params to use snake_case (API spec uses `init_image_id` not `initImageId`)
+- Fixed `upload_init_image` handler to read correct response key (`uploadInitImage` not `initImage`)
 
-### Security
-- API key from environment variables only (`LEONARDO_AI_API` or `LEONARDO_API_KEY`)
-- Authorization header never leaked in error messages
-- `SECURITY.md` with vulnerability reporting process
-- **SSRF protection** on `download_image` — blocks non-HTTPS schemes and private/loopback IP ranges
-- **Path traversal protection** on all download tools
-- **Content-type validation** — rejects non-`image/*` responses
-- **50 MB file size cap** on downloads
+## [0.1.0] — 2026-05-23
+
+### Added
+- Initial public release: 7 MCP tools for Leonardo AI image generation
+- `generate_image`, `generate_image_and_wait`, `get_generation`, `wait_for_generation`, `list_models`, `download_image`, `download_generation_images`
+- SSRF protection on download tools, API key hygiene, full test suite

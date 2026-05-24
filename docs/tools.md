@@ -112,3 +112,41 @@ Returns compact generation fields plus:
 
 - `downloaded`: array of `{ id?, url, path, bytes }`
 - `raw`: unmodified Leonardo response
+
+## motion_generation
+
+Creates a motion/video generation from an existing image. Returns a generation_id that can be polled with get_generation or wait_for_generation.
+
+Inputs:
+
+- `image_id` required string — The ID of the image to animate (supports generated images, variation images, and init images)
+- `motion_strength` optional integer 0-10, default 5
+- `is_public` optional boolean
+- `is_init_image` optional boolean — set true if source is an init image
+- `is_variation` optional boolean — set true if source is a variation
+
+Returns a compact `generation_id` plus raw Leonardo response.
+
+## upload_init_image
+
+Gets a presigned S3 URL for uploading an init image. The returned `init_image_id` can be used as `init_image_id` in `generate_image` for image-to-image generation.
+
+Inputs:
+
+- `extension` required string — File extension (e.g., "png", "jpg")
+
+Returns:
+
+- `init_image_id` — Use this with generate_image's `init_image_id` parameter
+- `url` — Presigned S3 upload URL
+- `fields` — Form fields required for the S3 upload
+
+## get_init_image
+
+Checks the status of an uploaded init image.
+
+Inputs:
+
+- `init_image_id` required string
+
+Returns the init image record including status and metadata, plus raw Leonardo response.
