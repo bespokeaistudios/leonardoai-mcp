@@ -17,6 +17,21 @@ describe('LeonardoClient', () => {
     expect(JSON.parse(init?.body as string)).toMatchObject({ prompt: 'a cat', width: 1024, height: 768, num_images: 2 });
   });
 
+  it('sends auth header and JSON body when creating a motion generation', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ motionSvdGenerationJob: { generationId: 'motion-456' } }), { status: 200 }));
+    const client = new LeonardoClient({ apiKey: 'test-key', fetch: fetchMock as typeof fetch });
+
+    const result = await client.createMotionGeneration({ imageId: 'img-1', motionStrength: 5 });
+
+    expect(result).toEqual({ motionSvdGenerationJob: { generationId: 'motion-456' } });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://cloud.leonardo.ai/api/rest/v1/generations-motion-svd');
+    expect(init?.method).toBe('POST');
+    expect(init?.headers).toMatchObject({ authorization: 'Bearer test-key', accept: 'application/json', 'content-type': 'application/json' });
+    expect(JSON.parse(init?.body as string)).toMatchObject({ imageId: 'img-1', motionStrength: 5 });
+  });
+
   it('normalizes API errors without leaking authorization or response body', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'bad request' }), { status: 400, statusText: 'Bad Request' }));
     const client = new LeonardoClient({ apiKey: 'secret-key', fetch: fetchMock as typeof fetch });
