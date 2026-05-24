@@ -89,6 +89,8 @@ mcp_servers:
 }
 ```
 
+**⚠️ Never commit this config file with your real API key.** Use an environment variable or secret manager instead. If you accidentally expose your key, rotate it immediately at [app.leonardo.ai](https://app.leonardo.ai).
+
 ### 4. Start creating
 
 Restart your AI assistant, then try:
@@ -133,8 +135,7 @@ Before publishing or handing this to another MCP host:
 1. Run `npm ci` on a clean checkout.
 2. Run `npm test`, `npm run typecheck -- --pretty false`, `npm run build`, and `npm run smoke:mcp`.
 3. Confirm `LEONARDO_AI_API` or `LEONARDO_API_KEY` is supplied by the MCP client environment, not committed in the repo.
-4. Use an absolute path to `dist/index.js` for local stdio MCP clients, or install the package and point the client at the installed `leonardo-mcp` bin.
-5. If publishing to npm, add final `repository`, `homepage`, and `bugs` metadata once the public GitHub URL is known.
+4. Use an absolute path to `dist/index.js` for local stdio MCP clients, or install the package and point the client at the installed `leonardoai-mcp` bin.
 
 ## Security
 

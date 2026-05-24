@@ -1,8 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('node:dns', () => ({
+  promises: {
+    resolve: vi.fn().mockResolvedValue(['93.184.216.34']),
+  },
+}));
+
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createToolHandlers } from '../src/tools.js';
+import { promises as dns } from 'node:dns';
+import { createToolHandlers, validateDownloadUrl } from '../src/tools.js';
 
 describe('tool handlers', () => {
   it('generate_image returns a compact generation id response', async () => {
@@ -137,5 +145,32 @@ describe('tool handlers', () => {
     } finally {
       await rm(outputDir, { recursive: true, force: true });
     }
+  });
+
+  describe('validateDownloadUrl (SSRF protection)', () => {
+    it('allows HTTPS URLs with public DNS resolution', async () => {
+      vi.mocked(dns.resolve).mockResolvedValue(['93.184.216.34']);
+      await expect(validateDownloadUrl('https://example.com/image.png')).resolves.toBeUndefined();
+    });
+
+    it('rejects HTTP URLs', async () => {
+      await expect(validateDownloadUrl('http://example.com/image.png')).rejects.toThrow(
+        'Blocked URL: only HTTPS scheme is allowed, got "http"',
+      );
+    });
+
+    it('rejects localhost URLs', async () => {
+      vi.mocked(dns.resolve).mockResolvedValue(['127.0.0.1']);
+      await expect(validateDownloadUrl('https://localhost/image.png')).rejects.toThrow(
+        'Blocked URL: resolved address 127.0.0.1 is a private, loopback, or link-local IP',
+      );
+    });
+
+    it('rejects private IP URLs', async () => {
+      vi.mocked(dns.resolve).mockRejectedValue(new Error('ENOTFOUND'));
+      await expect(validateDownloadUrl('https://192.168.1.1/test.png')).rejects.toThrow(
+        'Blocked URL: resolved address 192.168.1.1 is a private, loopback, or link-local IP',
+      );
+    });
   });
 });

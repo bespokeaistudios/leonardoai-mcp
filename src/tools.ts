@@ -3,6 +3,9 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, extname, resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
+import { URL } from 'node:url';
+import { promises as dns } from 'node:dns';
+import { isIP } from 'node:net';
 import type { LeonardoClient, JsonObject } from './leonardo-client.js';
 
 export const generateImageSchema = {
@@ -143,7 +146,53 @@ function resolveSafe(outputDir: string, outputPath: string): string {
   return resolved;
 }
 
+function isPrivateOrLoopbackIP(ip: string): boolean {
+  const version = isIP(ip);
+
+  if (version === 4) {
+    const [first, second] = ip.split('.').map(Number);
+    if (first === 127) return true;           // 127.0.0.0/8 loopback
+    if (first === 10) return true;            // 10.0.0.0/8 private
+    if (first === 172 && second >= 16 && second <= 31) return true;  // 172.16.0.0/12 private
+    if (first === 192 && second === 168) return true;                 // 192.168.0.0/16 private
+    if (first === 169 && second === 254) return true;                 // 169.254.0.0/16 link-local
+    return false;
+  }
+
+  if (version === 6) {
+    const normalized = ip.toLowerCase();
+    if (normalized === '::1') return true;    // loopback
+    if (/^fc/i.test(normalized) || /^fd/i.test(normalized)) return true;  // fc00::/7 unique-local
+    if (/^fe[89ab]/i.test(normalized)) return true;  // fe80::/10 link-local
+    return false;
+  }
+
+  return false;
+}
+
+export async function validateDownloadUrl(urlStr: string): Promise<void> {
+  const parsed = new URL(urlStr);
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`Blocked URL: only HTTPS scheme is allowed, got "${parsed.protocol.replace(/:$/, '')}"`);
+  }
+
+  let addresses: string[];
+  try {
+    addresses = await dns.resolve(parsed.hostname);
+  } catch {
+    addresses = [parsed.hostname];
+  }
+
+  for (const addr of addresses) {
+    if (isPrivateOrLoopbackIP(addr)) {
+      throw new Error(`Blocked URL: resolved address ${addr} is a private, loopback, or link-local IP`);
+    }
+  }
+}
+
 async function downloadUrl(fetchImpl: typeof fetch, url: string, outputPath?: string) {
+  await validateDownloadUrl(url);
   const response = await fetchImpl(url);
   if (!response.ok) {
     throw new Error(`Failed to download image: HTTP ${response.status} ${response.statusText}`);

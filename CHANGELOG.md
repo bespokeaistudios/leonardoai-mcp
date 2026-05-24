@@ -15,11 +15,14 @@
 - Stdio MCP transport for Claude Desktop, Hermes, Cursor, and other MCP clients
 - Zod-validated tool schemas with full input descriptions
 - Compact result shapes with raw API payloads preserved for debugging
-- Path traversal protection, content-type validation, and 50 MB file size cap on downloads
-- Error response body redaction — Leonardo API errors logged to stderr only
 - Pinned npm dependencies for reproducible installs
+- Error response body redaction — Leonardo API errors logged to stderr only
 
 ### Security
 - API key from environment variables only (`LEONARDO_AI_API` or `LEONARDO_API_KEY`)
 - Authorization header never leaked in error messages
 - `SECURITY.md` with vulnerability reporting process
+- **SSRF protection** on `download_image` — blocks non-HTTPS schemes and private/loopback IP ranges
+- **Path traversal protection** on all download tools
+- **Content-type validation** — rejects non-`image/*` responses
+- **50 MB file size cap** on downloads
