@@ -6,7 +6,7 @@
 
 To report a security vulnerability in `leonardoai-mcp`, email:
 
-**security@bespokeaistudios.com**
+**security@bespokeaistudios.online**
 
 Include:
 - A description of the issue

@@ -10,7 +10,7 @@
   "homepage": "https://github.com/bespokeaistudios/leonardoai-mcp#readme",
   "bugs": {
     "url": "https://github.com/bespokeaistudios/leonardoai-mcp/issues",
-    "email": "support@bespokeaistudios.com"
+    "email": "support@bespokeaistudios.online"
   },
   "bin": {
     "leonardoai-mcp": "dist/index.js"
@@ -45,7 +45,7 @@
     "model-context-protocol",
     "stdio"
   ],
-  "author": "Bespoke AI Studios (https://bespokeaistudios.com)",
+  "author": "Bespoke AI Studios (https://bespokeaistudios.online/)",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
