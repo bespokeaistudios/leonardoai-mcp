@@ -9,6 +9,9 @@ import {
   generateImageAndWaitSchema,
   generateImageSchema,
   getGenerationSchema,
+  getInitImageSchema,
+  motionGenerationSchema,
+  uploadInitImageSchema,
   waitForGenerationSchema,
 } from './tools.js';
 
@@ -89,6 +92,36 @@ export function createServer(env: NodeJS.ProcessEnv = process.env): McpServer {
       inputSchema: downloadGenerationImagesSchema,
     },
     async (args) => jsonText(await handlers.download_generation_images(args)),
+  );
+
+  server.registerTool(
+    'motion_generation',
+    {
+      title: 'Generate motion video',
+      description: 'Create a motion/video generation from an existing image. Returns a generation_id pollable via get_generation.',
+      inputSchema: motionGenerationSchema,
+    },
+    async (args) => jsonText(await handlers.motion_generation(args)),
+  );
+
+  server.registerTool(
+    'upload_init_image',
+    {
+      title: 'Upload init image',
+      description: 'Request a presigned S3 upload URL for an init image. Returns URL and form fields for direct upload to S3.',
+      inputSchema: uploadInitImageSchema,
+    },
+    async (args) => jsonText(await handlers.upload_init_image(args)),
+  );
+
+  server.registerTool(
+    'get_init_image',
+    {
+      title: 'Get init image',
+      description: 'Fetch the status and details of an uploaded init image by its ID.',
+      inputSchema: getInitImageSchema,
+    },
+    async (args) => jsonText(await handlers.get_init_image(args)),
   );
 
   return server;

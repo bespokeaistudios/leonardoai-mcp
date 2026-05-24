@@ -147,6 +147,88 @@ describe('tool handlers', () => {
     }
   });
 
+  it('motion_generation maps snake_case args to camelCase API payload', async () => {
+    const client = {
+      createMotionGeneration: vi.fn(async () => ({ sdGenerationJob: { generationId: 'gen-mot' } })),
+    } as any;
+    const handlers = createToolHandlers(client);
+
+    const response = await handlers.motion_generation({
+      image_id: 'img-1',
+      motion_strength: 7,
+      is_public: true,
+      is_init_image: false,
+      is_variation: true,
+    });
+
+    expect(client.createMotionGeneration).toHaveBeenCalledWith({
+      imageId: 'img-1',
+      motionStrength: 7,
+      isPublic: true,
+      isInitImage: false,
+      isVariation: true,
+    });
+    expect(response).toMatchObject({
+      generation_id: 'gen-mot',
+      raw: { sdGenerationJob: { generationId: 'gen-mot' } },
+    });
+  });
+
+  it('upload_init_image calls createInitImage with extension and extracts response fields', async () => {
+    const client = {
+      createInitImage: vi.fn(async () => ({
+        initImage: { id: 'init-abc', url: 'https://s3.example.com/upload', fields: { key: 'images/img.png' } },
+      })),
+    } as any;
+    const handlers = createToolHandlers(client);
+
+    const response = await handlers.upload_init_image({ extension: 'png' });
+
+    expect(client.createInitImage).toHaveBeenCalledWith({ extension: 'png' });
+    expect(response).toMatchObject({
+      init_image_id: 'init-abc',
+      url: 'https://s3.example.com/upload',
+      fields: { key: 'images/img.png' },
+    });
+  });
+
+  it('get_init_image calls getInitImage with the provided id', async () => {
+    const client = {
+      getInitImage: vi.fn(async () => ({ id: 'init-abc', status: 'UPLOADED' })),
+    } as any;
+    const handlers = createToolHandlers(client);
+
+    const response = await handlers.get_init_image({ init_image_id: 'init-abc' });
+
+    expect(client.getInitImage).toHaveBeenCalledWith('init-abc');
+    expect(response.raw).toEqual({ id: 'init-abc', status: 'UPLOADED' });
+  });
+
+  it('generate_image passes reference image params as camelCase', async () => {
+    const client = {
+      createGeneration: vi.fn(async () => ({ sdGenerationJob: { generationId: 'gen-ref' } })),
+    } as any;
+    const handlers = createToolHandlers(client);
+
+    await handlers.generate_image({
+      prompt: 'cyberpunk',
+      init_image_id: 'init-1',
+      init_generation_image_id: 'gen-img-1',
+      init_strength: 0.7,
+      image_prompts: ['a red car', 'a blue sky'],
+      image_prompt_weight: 0.5,
+    });
+
+    expect(client.createGeneration).toHaveBeenCalledWith({
+      prompt: 'cyberpunk',
+      initImageId: 'init-1',
+      initGenerationImageId: 'gen-img-1',
+      initStrength: 0.7,
+      imagePrompts: ['a red car', 'a blue sky'],
+      imagePromptWeight: 0.5,
+    });
+  });
+
   describe('validateDownloadUrl (SSRF protection)', () => {
     it('allows HTTPS URLs with public DNS resolution', async () => {
       vi.mocked(dns.resolve).mockResolvedValue(['93.184.216.34']);

@@ -21,6 +21,11 @@ export const generateImageSchema = {
   prompt_magic: z.boolean().optional().describe('Enable Prompt Magic when supported.'),
   guidance_scale: z.number().optional().describe('Guidance scale / CFG when supported.'),
   seed: z.number().int().optional().describe('Optional seed for repeatability.'),
+  init_image_id: z.string().optional().describe('Init image ID for reference image generation.'),
+  init_generation_image_id: z.string().optional().describe('Init generation image ID for reference image generation.'),
+  init_strength: z.number().min(0).max(1).optional().describe('Init image influence strength (0-1).'),
+  image_prompts: z.array(z.string()).max(5).optional().describe('Array of image prompts for reference generation (max 5).'),
+  image_prompt_weight: z.number().min(0).max(1).optional().describe('Weight of image prompts relative to text prompt (0-1).'),
 };
 
 export const getGenerationSchema = {
@@ -51,12 +56,31 @@ export const downloadGenerationImagesSchema = {
   output_dir: z.string().optional().describe('Directory for downloaded files. Defaults to the OS temp directory.'),
 };
 
+export const motionGenerationSchema = {
+  image_id: z.string().min(1).describe('The ID of the image to animate.'),
+  motion_strength: z.number().int().min(0).max(10).optional().describe('Motion strength (0-10).'),
+  is_public: z.boolean().optional().describe('Whether the generation is public.'),
+  is_init_image: z.boolean().optional().describe('Whether to use the image as an init image.'),
+  is_variation: z.boolean().optional().describe('Whether to create a variation.'),
+};
+
+export const uploadInitImageSchema = {
+  extension: z.string().min(1).describe('File extension for the init image (e.g. "png", "jpg").'),
+};
+
+export const getInitImageSchema = {
+  init_image_id: z.string().min(1).describe('Leonardo init image ID.'),
+};
+
 export type GenerateImageArgs = z.infer<z.ZodObject<typeof generateImageSchema>>;
 export type GetGenerationArgs = z.infer<z.ZodObject<typeof getGenerationSchema>>;
 export type WaitForGenerationArgs = z.infer<z.ZodObject<typeof waitForGenerationSchema>>;
 export type GenerateImageAndWaitArgs = z.infer<z.ZodObject<typeof generateImageAndWaitSchema>>;
 export type DownloadImageArgs = z.infer<z.ZodObject<typeof downloadImageSchema>>;
 export type DownloadGenerationImagesArgs = z.infer<z.ZodObject<typeof downloadGenerationImagesSchema>>;
+export type MotionGenerationArgs = z.infer<z.ZodObject<typeof motionGenerationSchema>>;
+export type UploadInitImageArgs = z.infer<z.ZodObject<typeof uploadInitImageSchema>>;
+export type GetInitImageArgs = z.infer<z.ZodObject<typeof getInitImageSchema>>;
 
 type CompactImage = { id?: string; url: string };
 type CompactGeneration = { generation_id?: string; status?: string; images: CompactImage[] };
@@ -99,6 +123,11 @@ function toLeonardoPayload(args: GenerateImageArgs | GenerateImageAndWaitArgs): 
     ['prompt_magic', 'promptMagic'],
     ['guidance_scale', 'guidance_scale'],
     ['seed', 'seed'],
+    ['init_image_id', 'initImageId'],
+    ['init_generation_image_id', 'initGenerationImageId'],
+    ['init_strength', 'initStrength'],
+    ['image_prompts', 'imagePrompts'],
+    ['image_prompt_weight', 'imagePromptWeight'],
   ];
   for (const [inputKey, apiKey] of mapping) {
     const value = args[inputKey];
@@ -290,6 +319,32 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
 
     async download_image(args: DownloadImageArgs) {
       return downloadUrl(fetchImpl, args.url, args.output_path);
+    },
+
+    async motion_generation(args: MotionGenerationArgs) {
+      const payload: JsonObject = { imageId: args.image_id };
+      if (args.motion_strength !== undefined) payload.motionStrength = args.motion_strength;
+      if (args.is_public !== undefined) payload.isPublic = args.is_public;
+      if (args.is_init_image !== undefined) payload.isInitImage = args.is_init_image;
+      if (args.is_variation !== undefined) payload.isVariation = args.is_variation;
+      const raw = await client.createMotionGeneration(payload);
+      return { generation_id: compactGenerationId(raw), raw };
+    },
+
+    async upload_init_image(args: UploadInitImageArgs) {
+      const raw = await client.createInitImage({ extension: args.extension });
+      const initImage = (raw.initImage ?? raw) as JsonObject;
+      return {
+        init_image_id: initImage.id ?? initImage.initImageId,
+        url: initImage.url,
+        fields: initImage.fields,
+        raw,
+      };
+    },
+
+    async get_init_image(args: GetInitImageArgs) {
+      const raw = await client.getInitImage(args.init_image_id);
+      return { raw };
     },
 
     async download_generation_images(args: DownloadGenerationImagesArgs) {

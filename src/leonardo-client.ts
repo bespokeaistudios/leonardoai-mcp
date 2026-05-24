@@ -49,6 +49,10 @@ export class LeonardoClient {
     return this.request('/init-image', { method: 'POST', body: uploadPayload });
   }
 
+  async getInitImage(initImageId: string): Promise<JsonObject> {
+    return this.request(`/init-image/${encodeURIComponent(initImageId)}`, { method: 'GET' });
+  }
+
   async createMotionGeneration(payload: JsonObject): Promise<JsonObject> {
     return this.request('/generations-motion-svd', { method: 'POST', body: payload });
   }
