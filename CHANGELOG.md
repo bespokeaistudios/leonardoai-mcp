@@ -3,9 +3,14 @@
 ## [0.3.0] — 2026-05-25
 
 ### Added
-- v2 API support: `list_models` now merges v1 and v2 platform models with `source` field
-- v2 GraphQL generation: `generate_image` and `generate_image_and_wait` auto-detect v2 model IDs (non-UUID format) and route to the v2 GraphQL mutation endpoint
+- v2 API support: `list_models` now merges v1 and v2 platform models with `source` field and `v2_model_id` (kebab-case identifier for use in generation requests)
+- v2 REST generation: `generate_image` and `generate_image_and_wait` auto-detect v2 models (non-UUID format) and route to the v2 REST endpoint `POST /api/rest/v2/generations`
 - New `LeonardoClient` methods: `listV2Models()`, `createV2Generation()`, and `v2Request()` helper
+
+### Fixed
+- v2 generation payload corrected from GraphQL to REST format (`{ model, parameters, public }` instead of `{ query, variables }`)
+- Model routing: non-UUID model IDs → v2 REST, UUID model IDs → v1 REST
+- Response parsing updated for v2 REST creation response shape (`generate.generationId`)
 
 ## [0.2.0] — 2026-05-25
 

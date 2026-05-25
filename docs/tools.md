@@ -4,13 +4,13 @@ All tools return JSON as MCP text content. Leonardo raw responses are included w
 
 ## generate_image
 
-Creates a Leonardo image generation job and returns immediately. Automatically routes v2 model IDs (non-UUID format) to the v2 GraphQL API.
+Creates a Leonardo image generation job and returns immediately. Automatically routes non-UUID model IDs to the v2 REST API and UUID model IDs to v1.
 
 Inputs:
 
 - `prompt` required string
 - `negative_prompt` optional string
-- `model_id` optional string — v1 models use UUID format; v2 models (e.g. `nano-banana-2`) are auto-detected and routed to the v2 GraphQL endpoint
+- `model_id` optional string — UUIDs route to v1 (e.g. `b2617f7e-...`), non-UUIDs route to v2 REST (e.g. `nano-banana-2`, `flux-2-pro`)
 - `width` optional integer
 - `height` optional integer
 - `num_images` optional integer 1-8
@@ -83,11 +83,11 @@ This is the preferred tool for agent/chat use because the user receives a comple
 
 ## list_models
 
-Lists Leonardo platform models from both v1 and v2 APIs. Results are merged and deduplicated by ID (v2 models take priority).
+Lists Leonardo platform models from both v1 and v2 APIs. Results are merged and deduplicated by ID (v2 models take priority). v2 models include a `v2_model_id` field (kebab-case) that can be used directly as `model_id` in generation requests.
 
 Returns:
 
-- `models`: compact array of `{ id, name?, source }` — `source` is `"v1"` or `"v2"`
+- `models`: compact array of `{ id, name?, v2_model_id?, source }` — `source` is `"v1"` or `"v2"`, `v2_model_id` is present only on v2 models
 - `v1_raw`: unmodified v1 Leonardo response (null if v1 failed)
 - `v2_raw`: unmodified v2 Leonardo response (null if v2 failed)
 

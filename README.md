@@ -114,7 +114,7 @@ For those who want to know what's under the hood:
 | `get_init_image` | 🆕 Check the status of an uploaded init image |
 | `get_generation` | Check on a generation by ID — see if it's done and get image URLs |
 | `wait_for_generation` | Poll an existing generation until it finishes or times out |
-| `list_models` | List all available Leonardo models (47+ at time of writing) |
+| `list_models` | List all available Leonardo models — 89+ across v1 (42 custom/platform) and v2 (47 production), merged with `v2_model_id` for easy copy-paste |
 | `download_image` | Download a single image URL to a local file |
 | `download_generation_images` | Fetch a completed generation and download all its images |
 
@@ -152,19 +152,29 @@ Before publishing or handing this to another MCP host:
 
 ## API notes
 
-Leonardo's REST API evolves. The default endpoint used here is:
+Leonardo has two API versions, both accessed through `cloud.leonardo.ai`:
 
-```text
+### v1 REST (legacy, always available)
+```
 https://cloud.leonardo.ai/api/rest/v1
 ```
-
-The implementation uses documented/common REST paths:
-
+Used for UUID-based model IDs (e.g. `b2617f7e-1f69-4c8b-a5b1-8f7a2e8e4e0a`). Endpoints:
 - `POST /generations` (with optional `init_image_id`, `init_strength`, `image_prompts` for image-to-image)
 - `GET /generations/{generationId}`
 - `GET /platformModels`
 - `POST /generations-motion-svd` (motion/video)
 - `POST /init-image` (upload init image)
 - `GET /init-image/{id}` (check init image status)
+
+### v2 REST (newer — Nano Banana 2, Flux, Veo, Kling, Seedream, etc.)
+```
+https://cloud.leonardo.ai/api/rest/v2
+```
+Used for kebab-case model identifiers (e.g. `nano-banana-2`, `flux-2-pro`, `veo-3-0`). Endpoints:
+- `POST /generations` — payload: `{ model, parameters: { prompt, width, height, ... }, public }`
+- `GET /models` — list production models with display names
+- Status polling for v2 generations reuses the v1 `GET /generations/{id}` endpoint
+
+**Routing is automatic:** non-UUID `model_id` → v2, UUID `model_id` → v1. No manual endpoint selection needed.
 
 If Leonardo changes payload names or endpoint shapes, adjust `src/leonardo-client.ts` and `src/tools.ts`, then add/extend tests first.
