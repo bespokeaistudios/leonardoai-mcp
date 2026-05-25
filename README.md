@@ -21,8 +21,8 @@ This is a plugin for AI assistants (Hermes, Claude, Cursor, and other MCP-compat
 
 <div align="center">
   <br>
-  <img src="https://cdn.leonardo.ai/users/94c914aa-9496-4dd4-be34-d78725c4ab39/generations/252236d7-cfc1-419d-97c0-c2e90ce7e67a/Default_A_tiny_rubber_duck_floating_in_a_cosmic_nebula_pixar_s_0.jpg" alt="Example generation" width="256">
-  <p><em>"A tiny rubber duck floating in a cosmic nebula"</em></p>
+  <img src="docs/cover.png" alt="Leonardo AI MCP — Image and Video Generation for AI Agents" width="512">
+  <p><em>"Leonardo AI MCP — Image and Video Generation for AI Agents"</em></p>
 </div>
 
 ## How it works
