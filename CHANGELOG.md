@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0] — 2026-05-25
+
+### Added
+- v2 API support: `list_models` now merges v1 and v2 platform models with `source` field
+- v2 GraphQL generation: `generate_image` and `generate_image_and_wait` auto-detect v2 model IDs (non-UUID format) and route to the v2 GraphQL mutation endpoint
+- New `LeonardoClient` methods: `listV2Models()`, `createV2Generation()`, and `v2Request()` helper
+
 ## [0.2.0] — 2026-05-25
 
 ### Added

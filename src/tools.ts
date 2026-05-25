@@ -91,11 +91,16 @@ const FAILED_STATUSES = new Set(['FAILED', 'ERROR', 'CANCELED', 'CANCELLED']);
 
 function compactGenerationId(raw: JsonObject): string | undefined {
   const job = raw.sdGenerationJob as JsonObject | undefined;
-  return (job?.generationId ?? job?.generation_id ?? raw.generationId ?? raw.generation_id) as string | undefined;
+  if (job) return (job.generationId ?? job.generation_id) as string | undefined;
+  const v2Data = raw.data as JsonObject | undefined;
+  const v2Generate = v2Data?.generate as JsonObject | undefined;
+  return (v2Generate?.id ?? raw.generationId ?? raw.generation_id) as string | undefined;
 }
 
 function compactGeneration(raw: JsonObject): CompactGeneration {
-  const root = (raw.generations_by_pk ?? raw.generation ?? raw) as JsonObject;
+  const v2Data = raw.data as JsonObject | undefined;
+  const v2Generate = v2Data?.generate as JsonObject | undefined;
+  const root = (raw.generations_by_pk ?? raw.generation ?? v2Generate ?? raw) as JsonObject;
   const imageList = (root.generated_images ?? root.images ?? []) as Array<JsonObject>;
   const images: CompactImage[] = imageList.flatMap((image) => {
     const url = (image.url ?? image.image_url) as string | undefined;
@@ -134,6 +139,36 @@ function toLeonardoPayload(args: GenerateImageArgs | GenerateImageAndWaitArgs): 
     if (value !== undefined) payload[apiKey] = value;
   }
   return payload;
+}
+
+function isV2ModelId(_modelId: string): boolean {
+  // V2 model routing is now handled by checking against the live v2 model list.
+  // This stub always returns false; the real check happens in createToolHandlers.
+  return false;
+}
+
+const V2_GENERATION_MUTATION =
+  'mutation generate($model: String!, $parameters: GenerateParameters!) { generate(model: $model, parameters: $parameters) { id status images { id url } } }';
+
+function toV2Payload(args: GenerateImageArgs | GenerateImageAndWaitArgs): JsonObject {
+  const parameters: JsonObject = {};
+  const paramKeys: Array<[keyof GenerateImageArgs, string]> = [
+    ['prompt', 'prompt'],
+    ['negative_prompt', 'negative_prompt'],
+    ['width', 'width'],
+    ['height', 'height'],
+    ['num_images', 'num_images'],
+    ['guidance_scale', 'guidance_scale'],
+    ['seed', 'seed'],
+  ];
+  for (const [inputKey, apiKey] of paramKeys) {
+    const value = args[inputKey];
+    if (value !== undefined) parameters[apiKey] = value;
+  }
+  return {
+    query: V2_GENERATION_MUTATION,
+    variables: { model: args.model_id, parameters },
+  };
 }
 
 function sleep(ms: number) {
@@ -256,6 +291,26 @@ async function downloadImages(fetchImpl: typeof fetch, images: CompactImage[], o
 }
 
 export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fetch = fetch) {
+  // Lazy-loaded v2 model ID cache for routing
+  let v2ModelIds: Set<string> | null = null;
+
+  async function ensureV2ModelIds(): Promise<Set<string>> {
+    if (v2ModelIds) return v2ModelIds;
+    try {
+      const raw = await client.listV2Models();
+      const models = (raw.productionApiAvailableModels ?? []) as Array<JsonObject>;
+      v2ModelIds = new Set(models.map(m => String(m.id)).filter(Boolean));
+    } catch {
+      v2ModelIds = new Set();
+    }
+    return v2ModelIds;
+  }
+
+  async function isV2Model(modelId: string): Promise<boolean> {
+    const ids = await ensureV2ModelIds();
+    return ids.has(modelId);
+  }
+
   async function waitForGeneration(args: WaitForGenerationArgs) {
     const timeoutMs = args.timeout_ms ?? 180_000;
     const pollIntervalMs = args.poll_interval_ms ?? 5_000;
@@ -278,6 +333,11 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
 
   return {
     async generate_image(args: GenerateImageArgs) {
+      if (args.model_id && await isV2Model(args.model_id)) {
+        const payload = toV2Payload(args);
+        const raw = await client.createV2Generation(payload);
+        return { generation_id: compactGenerationId(raw), raw };
+      }
       const payload = toLeonardoPayload(args);
       const raw = await client.createGeneration(payload);
       return { generation_id: compactGenerationId(raw), raw };
@@ -293,8 +353,9 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
     },
 
     async generate_image_and_wait(args: GenerateImageAndWaitArgs) {
-      const payload = toLeonardoPayload(args);
-      const raw = await client.createGeneration(payload);
+      const isV2 = args.model_id !== undefined && await isV2Model(args.model_id);
+      const payload = isV2 ? toV2Payload(args) : toLeonardoPayload(args);
+      const raw = isV2 ? await client.createV2Generation(payload) : await client.createGeneration(payload);
       const generationId = compactGenerationId(raw);
       if (!generationId) {
         throw new Error('Leonardo generation response did not include a generation id.');
@@ -309,12 +370,24 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
     },
 
     async list_models() {
-      const raw = await client.listModels();
-      const models = (raw.custom_models ?? raw.models ?? raw.platformModels ?? raw.data ?? []) as Array<JsonObject>;
-      return {
-        models: models.map((model) => ({ id: model.id, name: model.name ?? model.displayName ?? model.display_name })).filter((model) => model.id),
-        raw,
-      };
+      const [v1Raw, v2Raw] = await Promise.all([
+        client.listModels().catch(() => null),
+        client.listV2Models().catch(() => null),
+      ]);
+      const v1Models = ((v1Raw?.custom_models ?? v1Raw?.models ?? v1Raw?.platformModels ?? v1Raw?.data ?? []) as Array<JsonObject>)
+        .map((model) => ({ id: model.id as string | undefined, name: (model.name ?? model.displayName ?? model.display_name) as string | undefined, source: 'v1' as const }))
+        .filter((model): model is { id: string; name: string | undefined; source: 'v1' } => typeof model.id === 'string' && model.id.length > 0);
+      const v2Models = ((v2Raw?.productionApiAvailableModels ?? []) as Array<JsonObject>)
+        .map((model) => ({ id: model.id as string | undefined, name: (model.name ?? model.displayName ?? model.display_name) as string | undefined, source: 'v2' as const }))
+        .filter((model): model is { id: string; name: string | undefined; source: 'v2' } => typeof model.id === 'string' && model.id.length > 0);
+      const seen = new Set<string>();
+      const merged: Array<{ id: string; name?: string; source: string }> = [];
+      for (const model of [...v2Models, ...v1Models]) {
+        if (seen.has(model.id)) continue;
+        seen.add(model.id);
+        merged.push(model);
+      }
+      return { models: merged, v1_raw: v1Raw, v2_raw: v2Raw };
     },
 
     async download_image(args: DownloadImageArgs) {

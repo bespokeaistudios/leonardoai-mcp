@@ -107,16 +107,17 @@ describe('tool handlers', () => {
           { name: 'missing id ignored' },
         ],
       })),
+      listV2Models: vi.fn(async () => ({ productionApiAvailableModels: [] })),
     } as any;
     const handlers = createToolHandlers(client);
 
     const response = await handlers.list_models();
 
     expect(response.models).toEqual([
-      { id: 'model-1', name: 'Leonardo Vision XL' },
-      { id: 'model-2', name: 'Anime Pastel' },
+      { id: 'model-1', name: 'Leonardo Vision XL', source: 'v1' },
+      { id: 'model-2', name: 'Anime Pastel', source: 'v1' },
     ]);
-    expect(response.raw).toMatchObject({ custom_models: expect.any(Array) });
+    expect(response.v1_raw).toMatchObject({ custom_models: expect.any(Array) });
   });
 
   it('download_generation_images downloads all extracted generation images', async () => {
@@ -202,6 +203,127 @@ describe('tool handlers', () => {
 
     expect(client.getInitImage).toHaveBeenCalledWith('init-abc');
     expect(response.raw).toEqual({ id: 'init-abc', status: 'UPLOADED' });
+  });
+
+  it('list_models merges v1 and v2 model lists with source field', async () => {
+    const client = {
+      listModels: vi.fn(async () => ({
+        custom_models: [
+          { id: 'b2617f7e-1f69-4c8b-a5b1-8f7a2e8e4e0a', name: 'Leonardo Vision XL' },
+          { id: 'shared-model', name: 'Shared Model v1' },
+        ],
+      })),
+      listV2Models: vi.fn(async () => ({
+        productionApiAvailableModels: [
+          { id: 'nano-banana-2', name: 'Nano Banana 2', modelType: 'image', description: 'Fast model' },
+          { id: 'shared-model', name: 'Shared Model v2', modelType: 'image' },
+        ],
+      })),
+    } as any;
+    const handlers = createToolHandlers(client);
+
+    const response = await handlers.list_models();
+
+    expect(client.listModels).toHaveBeenCalled();
+    expect(client.listV2Models).toHaveBeenCalled();
+    expect(response.models).toEqual([
+      { id: 'nano-banana-2', name: 'Nano Banana 2', source: 'v2' },
+      { id: 'shared-model', name: 'Shared Model v2', source: 'v2' },
+      { id: 'b2617f7e-1f69-4c8b-a5b1-8f7a2e8e4e0a', name: 'Leonardo Vision XL', source: 'v1' },
+    ]);
+    expect(response.v1_raw).toBeTruthy();
+    expect(response.v2_raw).toBeTruthy();
+  });
+
+  it('list_models handles v1 failure gracefully', async () => {
+    const client = {
+      listModels: vi.fn(async () => { throw new Error('v1 down'); }),
+      listV2Models: vi.fn(async () => ({
+        productionApiAvailableModels: [{ id: 'nano-banana-2', name: 'Nano Banana 2' }],
+      })),
+    } as any;
+    const handlers = createToolHandlers(client);
+
+    const response = await handlers.list_models();
+
+    expect(response.models).toEqual([{ id: 'nano-banana-2', name: 'Nano Banana 2', source: 'v2' }]);
+    expect(response.v1_raw).toBeNull();
+    expect(response.v2_raw).toBeTruthy();
+  });
+
+  it('generate_image routes v2 model IDs to createV2Generation', async () => {
+    const client = {
+      listV2Models: vi.fn(async () => ({ productionApiAvailableModels: [{ id: 'nano-banana-2', name: 'Nano Banana 2' }] })),
+      createGeneration: vi.fn(),
+      createV2Generation: vi.fn(async () => ({
+        data: { generate: { id: 'gen-v2-123', status: 'PENDING', images: [] } },
+      })),
+    } as any;
+    const handlers = createToolHandlers(client);
+
+    const response = await handlers.generate_image({ prompt: 'a cat', model_id: 'nano-banana-2' });
+
+    expect(client.createGeneration).not.toHaveBeenCalled();
+    expect(client.createV2Generation).toHaveBeenCalledWith({
+      query: expect.stringContaining('mutation generate'),
+      variables: { model: 'nano-banana-2', parameters: { prompt: 'a cat' } },
+    });
+    expect(response.generation_id).toBe('gen-v2-123');
+  });
+
+  it('generate_image routes UUID model IDs to createGeneration (v1)', async () => {
+    const client = {
+      createGeneration: vi.fn(async () => ({ sdGenerationJob: { generationId: 'gen-v1' } })),
+      createV2Generation: vi.fn(),
+    } as any;
+    const handlers = createToolHandlers(client);
+
+    await handlers.generate_image({ prompt: 'a dog', model_id: 'b2617f7e-1f69-4c8b-a5b1-8f7a2e8e4e0a' });
+
+    expect(client.createGeneration).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'a dog', modelId: 'b2617f7e-1f69-4c8b-a5b1-8f7a2e8e4e0a' }));
+    expect(client.createV2Generation).not.toHaveBeenCalled();
+  });
+
+  it('generate_image_and_wait routes v2 model IDs correctly', async () => {
+    const client = {
+      listV2Models: vi.fn(async () => ({ productionApiAvailableModels: [{ id: 'nano-banana-2', name: 'Nano Banana 2' }] })),
+      createGeneration: vi.fn(),
+      createV2Generation: vi.fn(async () => ({
+        data: { generate: { id: 'gen-v2-wait', status: 'PENDING', images: [] } },
+      })),
+      getGeneration: vi.fn(async () => ({
+        data: { generate: { id: 'gen-v2-wait', status: 'COMPLETE', images: [{ id: 'img-1', url: 'https://example.com/1.png' }] } },
+      })),
+    } as any;
+    const handlers = createToolHandlers(client);
+
+    const response = await handlers.generate_image_and_wait({
+      prompt: 'a cat',
+      model_id: 'nano-banana-2',
+      poll_interval_ms: 1,
+      timeout_ms: 500,
+    });
+
+    expect(client.createV2Generation).toHaveBeenCalled();
+    expect(client.createGeneration).not.toHaveBeenCalled();
+    expect(client.getGeneration).toHaveBeenCalledWith('gen-v2-wait');
+    expect(response.generation_id).toBe('gen-v2-wait');
+    expect(response.images).toEqual([{ id: 'img-1', url: 'https://example.com/1.png' }]);
+  });
+
+  it('compactGenerationId extracts from v2 GraphQL response', async () => {
+    const client = {
+      listV2Models: vi.fn(async () => ({ productionApiAvailableModels: [{ id: 'nano-banana-2', name: 'Nano Banana 2' }] })),
+      createGeneration: vi.fn(async () => ({ sdGenerationJob: { generationId: 'gen-v1' } })),
+      createV2Generation: vi.fn(async () => ({ data: { generate: { id: 'gen-v2-compact', status: 'PENDING' } } })),
+    } as any;
+    const handlers = createToolHandlers(client);
+
+    const v1Response = await handlers.generate_image({ prompt: 'test', model_id: 'b2617f7e-1f69-4c8b-a5b1-8f7a2e8e4e0a' });
+    expect(v1Response.generation_id).toBe('gen-v1');
+
+    const v2Response = await handlers.generate_image({ prompt: 'test', model_id: 'nano-banana-2' });
+    expect(v2Response.generation_id).toBe('gen-v2-compact');
   });
 
   it('generate_image passes reference image params as camelCase', async () => {

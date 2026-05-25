@@ -22,7 +22,7 @@ function jsonText(data: unknown) {
 export function createServer(env: NodeJS.ProcessEnv = process.env): McpServer {
   const client = new LeonardoClient({ apiKey: getApiKey(env), baseUrl: getBaseUrl(env) });
   const handlers = createToolHandlers(client);
-  const server = new McpServer({ name: 'leonardoai-mcp', version: '0.2.0' });
+  const server = new McpServer({ name: 'leonardoai-mcp', version: '0.3.0' });
 
   server.registerTool(
     'generate_image',

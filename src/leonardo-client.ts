@@ -17,6 +17,7 @@ export class LeonardoApiError extends Error {
 export interface LeonardoClientOptions {
   apiKey: string;
   baseUrl?: string;
+  v2BaseUrl?: string;
   fetch?: FetchLike;
 }
 
@@ -25,11 +26,13 @@ export type JsonObject = Record<string, unknown>;
 export class LeonardoClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
+  private readonly v2BaseUrl: string;
   private readonly fetchImpl: FetchLike;
 
   constructor(options: LeonardoClientOptions) {
     this.apiKey = options.apiKey;
     this.baseUrl = (options.baseUrl ?? 'https://cloud.leonardo.ai/api/rest/v1').replace(/\/$/, '');
+    this.v2BaseUrl = (options.v2BaseUrl ?? 'https://cloud.leonardo.ai/api/rest/v2').replace(/\/$/, '');
     this.fetchImpl = options.fetch ?? fetch;
   }
 
@@ -55,6 +58,42 @@ export class LeonardoClient {
 
   async createMotionGeneration(payload: JsonObject): Promise<JsonObject> {
     return this.request('/generations-motion-svd', { method: 'POST', body: payload });
+  }
+
+  async listV2Models(): Promise<JsonObject> {
+    return this.v2Request('/models', { method: 'GET' });
+  }
+
+  async createV2Generation(payload: JsonObject): Promise<JsonObject> {
+    return this.v2Request('/generations', { method: 'POST', body: payload });
+  }
+
+  private async v2Request(path: string, options: { method: string; body?: JsonObject }): Promise<JsonObject> {
+    const init: RequestInit = {
+      method: options.method,
+      headers: {
+        authorization: `Bearer ${this.apiKey}`,
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+    };
+    if (options.body !== undefined) {
+      init.body = JSON.stringify(options.body);
+    }
+
+    const response = await this.fetchImpl(`${this.v2BaseUrl}${path}`, init);
+    const text = await response.text();
+    if (!response.ok) {
+      throw new LeonardoApiError(response.status, response.statusText, text);
+    }
+    if (!text) {
+      return {};
+    }
+    try {
+      return JSON.parse(text) as JsonObject;
+    } catch {
+      return { text };
+    }
   }
 
   private async request(path: string, options: { method: string; body?: JsonObject }): Promise<JsonObject> {

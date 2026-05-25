@@ -4,13 +4,13 @@ All tools return JSON as MCP text content. Leonardo raw responses are included w
 
 ## generate_image
 
-Creates a Leonardo image generation job and returns immediately.
+Creates a Leonardo image generation job and returns immediately. Automatically routes v2 model IDs (non-UUID format) to the v2 GraphQL API.
 
 Inputs:
 
 - `prompt` required string
 - `negative_prompt` optional string
-- `model_id` optional string
+- `model_id` optional string — v1 models use UUID format; v2 models (e.g. `nano-banana-2`) are auto-detected and routed to the v2 GraphQL endpoint
 - `width` optional integer
 - `height` optional integer
 - `num_images` optional integer 1-8
@@ -20,6 +20,11 @@ Inputs:
 - `prompt_magic` optional boolean
 - `guidance_scale` optional number
 - `seed` optional integer
+- `init_image_id` optional string
+- `init_generation_image_id` optional string
+- `init_strength` optional number 0-1
+- `image_prompts` optional array of strings (max 5)
+- `image_prompt_weight` optional number 0-1
 
 Returns a compact `generation_id` plus raw Leonardo response.
 
@@ -78,12 +83,13 @@ This is the preferred tool for agent/chat use because the user receives a comple
 
 ## list_models
 
-Lists Leonardo platform models.
+Lists Leonardo platform models from both v1 and v2 APIs. Results are merged and deduplicated by ID (v2 models take priority).
 
 Returns:
 
-- `models`: compact array of `{ id, name? }` when the response shape is recognized
-- `raw`: unmodified Leonardo response
+- `models`: compact array of `{ id, name?, source }` — `source` is `"v1"` or `"v2"`
+- `v1_raw`: unmodified v1 Leonardo response (null if v1 failed)
+- `v2_raw`: unmodified v2 Leonardo response (null if v2 failed)
 
 ## download_image
 
