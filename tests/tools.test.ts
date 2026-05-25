@@ -227,8 +227,8 @@ describe('tool handlers', () => {
     expect(client.listModels).toHaveBeenCalled();
     expect(client.listV2Models).toHaveBeenCalled();
     expect(response.models).toEqual([
-      { id: 'nano-banana-2', name: 'Nano Banana 2', source: 'v2' },
-      { id: 'shared-model', name: 'Shared Model v2', source: 'v2' },
+      { id: 'nano-banana-2', name: 'Nano Banana 2', source: 'v2', v2_model_id: 'nano-banana-2' },
+      { id: 'shared-model', name: 'Shared Model v2', source: 'v2', v2_model_id: 'shared-model-v2' },
       { id: 'b2617f7e-1f69-4c8b-a5b1-8f7a2e8e4e0a', name: 'Leonardo Vision XL', source: 'v1' },
     ]);
     expect(response.v1_raw).toBeTruthy();
@@ -246,17 +246,17 @@ describe('tool handlers', () => {
 
     const response = await handlers.list_models();
 
-    expect(response.models).toEqual([{ id: 'nano-banana-2', name: 'Nano Banana 2', source: 'v2' }]);
+    expect(response.models).toEqual([{ id: 'nano-banana-2', name: 'Nano Banana 2', source: 'v2', v2_model_id: 'nano-banana-2' }]);
     expect(response.v1_raw).toBeNull();
     expect(response.v2_raw).toBeTruthy();
   });
 
   it('generate_image routes v2 model IDs to createV2Generation', async () => {
     const client = {
-      listV2Models: vi.fn(async () => ({ productionApiAvailableModels: [{ id: 'nano-banana-2', name: 'Nano Banana 2' }] })),
+      listV2Models: vi.fn(async () => ({ productionApiAvailableModels: [{ id: '7418e71f', name: 'nano-banana-2' }] })),
       createGeneration: vi.fn(),
       createV2Generation: vi.fn(async () => ({
-        data: { generate: { id: 'gen-v2-123', status: 'PENDING', images: [] } },
+        generate: { generationId: 'gen-v2-123', apiCreditCost: 26 },
       })),
     } as any;
     const handlers = createToolHandlers(client);
@@ -265,8 +265,9 @@ describe('tool handlers', () => {
 
     expect(client.createGeneration).not.toHaveBeenCalled();
     expect(client.createV2Generation).toHaveBeenCalledWith({
-      query: expect.stringContaining('mutation generate'),
-      variables: { model: 'nano-banana-2', parameters: { prompt: 'a cat' } },
+      model: 'nano-banana-2',
+      parameters: { prompt: 'a cat' },
+      public: false,
     });
     expect(response.generation_id).toBe('gen-v2-123');
   });
@@ -286,13 +287,13 @@ describe('tool handlers', () => {
 
   it('generate_image_and_wait routes v2 model IDs correctly', async () => {
     const client = {
-      listV2Models: vi.fn(async () => ({ productionApiAvailableModels: [{ id: 'nano-banana-2', name: 'Nano Banana 2' }] })),
+      listV2Models: vi.fn(async () => ({ productionApiAvailableModels: [{ id: 'uuid', name: 'nano-banana-2' }] })),
       createGeneration: vi.fn(),
       createV2Generation: vi.fn(async () => ({
-        data: { generate: { id: 'gen-v2-wait', status: 'PENDING', images: [] } },
+        generate: { generationId: 'gen-v2-wait', apiCreditCost: 26 },
       })),
       getGeneration: vi.fn(async () => ({
-        data: { generate: { id: 'gen-v2-wait', status: 'COMPLETE', images: [{ id: 'img-1', url: 'https://example.com/1.png' }] } },
+        generations_by_pk: { id: 'gen-v2-wait', status: 'COMPLETE', generated_images: [{ id: 'img-1', url: 'https://example.com/1.png' }] },
       })),
     } as any;
     const handlers = createToolHandlers(client);
@@ -311,11 +312,11 @@ describe('tool handlers', () => {
     expect(response.images).toEqual([{ id: 'img-1', url: 'https://example.com/1.png' }]);
   });
 
-  it('compactGenerationId extracts from v2 GraphQL response', async () => {
+  it('compactGenerationId extracts from v2 REST create response', async () => {
     const client = {
-      listV2Models: vi.fn(async () => ({ productionApiAvailableModels: [{ id: 'nano-banana-2', name: 'Nano Banana 2' }] })),
+      listV2Models: vi.fn(async () => ({ productionApiAvailableModels: [{ id: 'uuid', name: 'nano-banana-2' }] })),
       createGeneration: vi.fn(async () => ({ sdGenerationJob: { generationId: 'gen-v1' } })),
-      createV2Generation: vi.fn(async () => ({ data: { generate: { id: 'gen-v2-compact', status: 'PENDING' } } })),
+      createV2Generation: vi.fn(async () => ({ generate: { generationId: 'gen-v2-compact' } })),
     } as any;
     const handlers = createToolHandlers(client);
 

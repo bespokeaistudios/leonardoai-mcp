@@ -92,15 +92,22 @@ const FAILED_STATUSES = new Set(['FAILED', 'ERROR', 'CANCELED', 'CANCELLED']);
 function compactGenerationId(raw: JsonObject): string | undefined {
   const job = raw.sdGenerationJob as JsonObject | undefined;
   if (job) return (job.generationId ?? job.generation_id) as string | undefined;
+  // v2 REST creation response: { generate: { generationId: "..." } }
+  const v2Generate = raw.generate as JsonObject | undefined;
+  if (v2Generate?.generationId) return v2Generate.generationId as string;
+  // v2 GraphQL-style response (fallback): { data: { generate: { id: "..." } } }
   const v2Data = raw.data as JsonObject | undefined;
-  const v2Generate = v2Data?.generate as JsonObject | undefined;
-  return (v2Generate?.id ?? raw.generationId ?? raw.generation_id) as string | undefined;
+  const v2DataGenerate = v2Data?.generate as JsonObject | undefined;
+  return (v2DataGenerate?.id ?? raw.generationId ?? raw.generation_id) as string | undefined;
 }
 
 function compactGeneration(raw: JsonObject): CompactGeneration {
+  // v2 REST create response or v2 GraphQL response
+  const v2Create = raw.generate as JsonObject | undefined;
   const v2Data = raw.data as JsonObject | undefined;
-  const v2Generate = v2Data?.generate as JsonObject | undefined;
-  const root = (raw.generations_by_pk ?? raw.generation ?? v2Generate ?? raw) as JsonObject;
+  const v2GraphQL = v2Data?.generate as JsonObject | undefined;
+  // v1 polling response (also used for v2 gen status)
+  const root = (raw.generations_by_pk ?? v2Create ?? v2GraphQL ?? raw.generation ?? raw) as JsonObject;
   const imageList = (root.generated_images ?? root.images ?? []) as Array<JsonObject>;
   const images: CompactImage[] = imageList.flatMap((image) => {
     const url = (image.url ?? image.image_url) as string | undefined;
@@ -141,33 +148,43 @@ function toLeonardoPayload(args: GenerateImageArgs | GenerateImageAndWaitArgs): 
   return payload;
 }
 
-function isV2ModelId(_modelId: string): boolean {
-  // V2 model routing is now handled by checking against the live v2 model list.
-  // This stub always returns false; the real check happens in createToolHandlers.
-  return false;
+// Derive the kebab-case v2 model identifier from its display name.
+// Display names like "Nano Banana 2" → "nano-banana-2"
+function toV2ModelId(displayName: string): string {
+  return displayName.toLowerCase().replace(/\s+/g, '-');
 }
 
-const V2_GENERATION_MUTATION =
-  'mutation generate($model: String!, $parameters: GenerateParameters!) { generate(model: $model, parameters: $parameters) { id status images { id url } } }';
-
 function toV2Payload(args: GenerateImageArgs | GenerateImageAndWaitArgs): JsonObject {
+  // v2 /generations is a REST endpoint, not GraphQL.
+  // Payload: { model: "nano-banana-2", parameters: { prompt, width, height, ... }, public: false }
   const parameters: JsonObject = {};
   const paramKeys: Array<[keyof GenerateImageArgs, string]> = [
     ['prompt', 'prompt'],
     ['negative_prompt', 'negative_prompt'],
     ['width', 'width'],
     ['height', 'height'],
-    ['num_images', 'num_images'],
+    ['num_images', 'quantity'],
     ['guidance_scale', 'guidance_scale'],
     ['seed', 'seed'],
+    ['preset_style', 'style_ids'],
+    ['init_image_id', 'init_image_id'],
+    ['init_strength', 'init_strength'],
   ];
   for (const [inputKey, apiKey] of paramKeys) {
     const value = args[inputKey];
-    if (value !== undefined) parameters[apiKey] = value;
+    if (value !== undefined) {
+      // style_ids in v2 is an array (single-element from preset_style string)
+      if (apiKey === 'style_ids' && typeof value === 'string') {
+        parameters[apiKey] = [value];
+      } else {
+        parameters[apiKey] = value;
+      }
+    }
   }
   return {
-    query: V2_GENERATION_MUTATION,
-    variables: { model: args.model_id, parameters },
+    model: args.model_id,
+    parameters,
+    public: false,
   };
 }
 
@@ -291,24 +308,19 @@ async function downloadImages(fetchImpl: typeof fetch, images: CompactImage[], o
 }
 
 export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fetch = fetch) {
-  // Lazy-loaded v2 model ID cache for routing
-  let v2ModelIds: Set<string> | null = null;
+  // Route v2 vs v1 by model ID format:
+  // - UUIDs (e.g. "b2617f7e-...") → v1 REST
+  // - Everything else (e.g. "nano-banana-2") → v2 REST
+  // The v2 model list returns display names ("Nano Banana 2") which differ from
+  // the kebab-case identifiers used in the generation endpoint.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  async function ensureV2ModelIds(): Promise<Set<string>> {
-    if (v2ModelIds) return v2ModelIds;
-    try {
-      const raw = await client.listV2Models();
-      const models = (raw.productionApiAvailableModels ?? []) as Array<JsonObject>;
-      v2ModelIds = new Set(models.map(m => String(m.id)).filter(Boolean));
-    } catch {
-      v2ModelIds = new Set();
-    }
-    return v2ModelIds;
+  function isV2ModelSync(modelId: string): boolean {
+    return !UUID_RE.test(modelId);
   }
 
   async function isV2Model(modelId: string): Promise<boolean> {
-    const ids = await ensureV2ModelIds();
-    return ids.has(modelId);
+    return isV2ModelSync(modelId);
   }
 
   async function waitForGeneration(args: WaitForGenerationArgs) {
@@ -378,10 +390,18 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
         .map((model) => ({ id: model.id as string | undefined, name: (model.name ?? model.displayName ?? model.display_name) as string | undefined, source: 'v1' as const }))
         .filter((model): model is { id: string; name: string | undefined; source: 'v1' } => typeof model.id === 'string' && model.id.length > 0);
       const v2Models = ((v2Raw?.productionApiAvailableModels ?? []) as Array<JsonObject>)
-        .map((model) => ({ id: model.id as string | undefined, name: (model.name ?? model.displayName ?? model.display_name) as string | undefined, source: 'v2' as const }))
-        .filter((model): model is { id: string; name: string | undefined; source: 'v2' } => typeof model.id === 'string' && model.id.length > 0);
+        .map((model) => {
+          const name = (model.name ?? model.displayName ?? model.display_name) as string | undefined;
+          return {
+            id: model.id as string | undefined,
+            name,
+            v2_model_id: name ? toV2ModelId(name) : undefined,
+            source: 'v2' as const,
+          };
+        })
+        .filter((model): model is { id: string; name: string | undefined; v2_model_id: string | undefined; source: 'v2' } => typeof model.id === 'string' && model.id.length > 0);
       const seen = new Set<string>();
-      const merged: Array<{ id: string; name?: string; source: string }> = [];
+      const merged: Array<{ id: string; name?: string; v2_model_id?: string; source: string }> = [];
       for (const model of [...v2Models, ...v1Models]) {
         if (seen.has(model.id)) continue;
         seen.add(model.id);
