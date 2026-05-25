@@ -35,13 +35,13 @@ export const getGenerationSchema = {
 export const waitForGenerationSchema = {
   generation_id: z.string().min(1).describe('Leonardo generation ID.'),
   timeout_ms: z.number().int().positive().max(10 * 60 * 1000).optional().describe('Maximum wait time in milliseconds. Default 180000.'),
-  poll_interval_ms: z.number().int().positive().max(30_000).optional().describe('Polling interval in milliseconds. Default 5000.'),
+  poll_interval_ms: z.number().int().positive().max(30_000).optional().describe('Polling interval in milliseconds. Default 5000. Minimum 2000 enforced server-side.'),
 };
 
 export const generateImageAndWaitSchema = {
   ...generateImageSchema,
   timeout_ms: z.number().int().positive().max(10 * 60 * 1000).optional().describe('Maximum wait time in milliseconds. Default 180000.'),
-  poll_interval_ms: z.number().int().positive().max(30_000).optional().describe('Polling interval in milliseconds. Default 5000.'),
+  poll_interval_ms: z.number().int().positive().max(30_000).optional().describe('Polling interval in milliseconds. Default 5000. Minimum 2000 enforced server-side.'),
   download: z.boolean().optional().describe('Download completed images to local disk as part of the result. Default false.'),
   output_dir: z.string().optional().describe('Directory for downloaded files when download=true. Defaults to the OS temp directory.'),
 };
@@ -188,6 +188,35 @@ function toV2Payload(args: GenerateImageArgs | GenerateImageAndWaitArgs): JsonOb
   };
 }
 
+const SENSITIVE_KEYS = new Set([
+  'apiKey',
+  'token',
+  'signedUrl',
+  'signed_url',
+  'uploadUrl',
+  'upload_url',
+  'presignedUrl',
+  'presigned_url',
+  'authorization',
+  'x-api-key',
+]);
+
+function sanitizeRaw(obj: unknown, depth = 0): unknown {
+  if (depth > 5) return obj;
+  if (Array.isArray(obj)) return obj.map((item) => sanitizeRaw(item, depth + 1));
+  if (obj !== null && typeof obj === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      if (SENSITIVE_KEYS.has(key)) continue;
+      result[key] = sanitizeRaw(value, depth + 1);
+    }
+    return result;
+  }
+  return obj;
+}
+
+const MIN_POLL_INTERVAL_MS = 2000;
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -217,6 +246,7 @@ function extensionFromUrl(url: string) {
 }
 
 const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
+const ALLOWED_DOWNLOAD_HOSTS = new Set(['cdn.leonardo.ai']);
 
 function resolveSafe(outputDir: string, outputPath: string): string {
   const resolved = resolve(outputPath);
@@ -256,6 +286,10 @@ export async function validateDownloadUrl(urlStr: string): Promise<void> {
 
   if (parsed.protocol !== 'https:') {
     throw new Error(`Blocked URL: only HTTPS scheme is allowed, got "${parsed.protocol.replace(/:$/, '')}"`);
+  }
+
+  if (!ALLOWED_DOWNLOAD_HOSTS.has(parsed.hostname)) {
+    throw new Error(`Blocked URL: only HTTPS downloads from cdn.leonardo.ai are allowed`);
   }
 
   let addresses: string[];
@@ -325,14 +359,14 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
 
   async function waitForGeneration(args: WaitForGenerationArgs) {
     const timeoutMs = args.timeout_ms ?? 180_000;
-    const pollIntervalMs = args.poll_interval_ms ?? 5_000;
+    const pollIntervalMs = Math.max(args.poll_interval_ms ?? 5_000, MIN_POLL_INTERVAL_MS);
     const start = Date.now();
     let last: (CompactGeneration & { raw: JsonObject }) | undefined;
 
     while (Date.now() - start <= timeoutMs) {
       const raw = await client.getGeneration(args.generation_id);
       const compact = compactGeneration(raw);
-      last = { ...compact, raw };
+      last = { ...compact, raw: sanitizeRaw(raw) as JsonObject };
 
       if (isComplete(compact.status, compact.images.length) || isFailed(compact.status)) {
         return { ...last, timed_out: false, elapsed_ms: Date.now() - start };
@@ -348,16 +382,16 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
       if (args.model_id && await isV2Model(args.model_id)) {
         const payload = toV2Payload(args);
         const raw = await client.createV2Generation(payload);
-        return { generation_id: compactGenerationId(raw), raw };
+        return { generation_id: compactGenerationId(raw), raw: sanitizeRaw(raw) };
       }
       const payload = toLeonardoPayload(args);
       const raw = await client.createGeneration(payload);
-      return { generation_id: compactGenerationId(raw), raw };
+      return { generation_id: compactGenerationId(raw), raw: sanitizeRaw(raw) };
     },
 
     async get_generation(args: GetGenerationArgs) {
       const raw = await client.getGeneration(args.generation_id);
-      return { ...compactGeneration(raw), raw };
+      return { ...compactGeneration(raw), raw: sanitizeRaw(raw) };
     },
 
     async wait_for_generation(args: WaitForGenerationArgs) {
@@ -378,7 +412,7 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
         poll_interval_ms: args.poll_interval_ms,
       });
       const downloaded = args.download && waited.images.length > 0 ? await downloadImages(fetchImpl, waited.images, args.output_dir) : undefined;
-      return { generation_id: generationId, create_raw: raw, ...waited, downloaded };
+      return { generation_id: generationId, create_raw: sanitizeRaw(raw), ...waited, downloaded };
     },
 
     async list_models() {
@@ -407,7 +441,7 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
         seen.add(model.id);
         merged.push(model);
       }
-      return { models: merged, v1_raw: v1Raw, v2_raw: v2Raw };
+      return { models: merged, v1_raw: sanitizeRaw(v1Raw), v2_raw: sanitizeRaw(v2Raw) };
     },
 
     async download_image(args: DownloadImageArgs) {
@@ -421,7 +455,7 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
       if (args.is_init_image !== undefined) payload.isInitImage = args.is_init_image;
       if (args.is_variation !== undefined) payload.isVariation = args.is_variation;
       const raw = await client.createMotionGeneration(payload);
-      return { generation_id: compactGenerationId(raw), raw };
+      return { generation_id: compactGenerationId(raw), raw: sanitizeRaw(raw) };
     },
 
     async upload_init_image(args: UploadInitImageArgs) {
@@ -431,20 +465,20 @@ export function createToolHandlers(client: LeonardoClient, fetchImpl: typeof fet
         init_image_id: initImage.id ?? initImage.initImageId,
         url: initImage.url,
         fields: initImage.fields,
-        raw,
+        raw: sanitizeRaw(raw),
       };
     },
 
     async get_init_image(args: GetInitImageArgs) {
       const raw = await client.getInitImage(args.init_image_id);
-      return { raw };
+      return { raw: sanitizeRaw(raw) };
     },
 
     async download_generation_images(args: DownloadGenerationImagesArgs) {
       const raw = await client.getGeneration(args.generation_id);
       const compact = compactGeneration(raw);
       const downloaded = await downloadImages(fetchImpl, compact.images, args.output_dir);
-      return { ...compact, downloaded, raw };
+      return { ...compact, downloaded, raw: sanitizeRaw(raw) };
     },
   };
 }

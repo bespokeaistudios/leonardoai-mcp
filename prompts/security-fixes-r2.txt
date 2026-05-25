@@ -1,0 +1,61 @@
+Security fixes round 2 — leonardoai-mcp (fixes 6 and 7 of 7)
+
+Working directory: /home/kyle/leonardo-mcp
+Test command: npm run build && npm test && npm run typecheck && npm run smoke:mcp
+
+CRITICAL: After each fix, run the test suite. Fix 7 requires adding a test. Do NOT push to git.
+
+## Fix 6: Pin dependency versions
+
+In package.json:
+
+EXACT VERSIONS (check what's actually installed with `npm ls --depth=0` first, then use those):
+- Change ALL `^` ranges to `~` pinning (minor-level, allows patches)
+- dependencies: @modelcontextprotocol/sdk, zod
+- devDependencies: @types/node, tsx, typescript, vitest
+- For TypeScript: if it's 6.0.x, pin to `"~6.0.3"` (the current installed version)
+- For zod: `"~4.4.3"` 
+- Run `npm install` to update package-lock.json
+- Run `npm run build && npm run typecheck` to verify nothing breaks
+
+## Fix 7: Add AbortController-based fetch timeout to all outbound HTTP calls
+
+In src/leonardo-client.ts:
+
+1. Add constant at the top of the class/export area:
+   ```
+   const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
+   ```
+
+2. In BOTH `request()` and `v2Request()` methods, wrap the fetch call:
+   ```
+   const controller = new AbortController();
+   const timeoutId = setTimeout(() => controller.abort(), DEFAULT_FETCH_TIMEOUT_MS);
+   try {
+     const response = await this.fetchImpl(url, { ...init, signal: controller.signal });
+     // ... existing response handling code ...
+   } finally {
+     clearTimeout(timeoutId);
+   }
+   ```
+   
+3. If fetch is aborted (signal aborted), catch it and throw a clear error:
+   ```
+   if (controller.signal.aborted) {
+     throw new Error(`Leonardo API request timed out after ${DEFAULT_FETCH_TIMEOUT_MS / 1000}s`);
+   }
+   ```
+   Handle this before the `if (!response.ok)` check.
+
+4. In tests/leonardo-client.test.ts, add a test:
+   - Mock fetch to return a promise that never resolves (hangs)
+   - Call a client method that uses request() (e.g., listModels)
+   - Verify the promise rejects with a timeout error within 35 seconds
+   - Use vitest fake timers OR a short timeout value for the test
+
+## Final Verification
+
+After both fixes:
+1. `npm run build && npm test && npm run typecheck` — ALL must pass
+2. `npm run smoke:mcp` — all 10 tools discovered
+3. Report final test count and list modified files

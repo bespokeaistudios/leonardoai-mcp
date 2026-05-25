@@ -1,5 +1,7 @@
 export type FetchLike = typeof fetch;
 
+const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
+
 export class LeonardoApiError extends Error {
   constructor(
     public readonly status: number,
@@ -19,6 +21,7 @@ export interface LeonardoClientOptions {
   baseUrl?: string;
   v2BaseUrl?: string;
   fetch?: FetchLike;
+  fetchTimeoutMs?: number;
 }
 
 export type JsonObject = Record<string, unknown>;
@@ -28,12 +31,14 @@ export class LeonardoClient {
   private readonly baseUrl: string;
   private readonly v2BaseUrl: string;
   private readonly fetchImpl: FetchLike;
+  private readonly fetchTimeoutMs: number;
 
   constructor(options: LeonardoClientOptions) {
     this.apiKey = options.apiKey;
     this.baseUrl = (options.baseUrl ?? 'https://cloud.leonardo.ai/api/rest/v1').replace(/\/$/, '');
     this.v2BaseUrl = (options.v2BaseUrl ?? 'https://cloud.leonardo.ai/api/rest/v2').replace(/\/$/, '');
     this.fetchImpl = options.fetch ?? fetch;
+    this.fetchTimeoutMs = options.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
   }
 
   async createGeneration(payload: JsonObject): Promise<JsonObject> {
@@ -81,18 +86,30 @@ export class LeonardoClient {
       init.body = JSON.stringify(options.body);
     }
 
-    const response = await this.fetchImpl(`${this.v2BaseUrl}${path}`, init);
-    const text = await response.text();
-    if (!response.ok) {
-      throw new LeonardoApiError(response.status, response.statusText, text);
-    }
-    if (!text) {
-      return {};
-    }
+    const controller = new AbortController();
+    const timeoutMs = this.fetchTimeoutMs;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return JSON.parse(text) as JsonObject;
-    } catch {
-      return { text };
+      const response = await this.fetchImpl(`${this.v2BaseUrl}${path}`, { ...init, signal: controller.signal });
+      const text = await response.text();
+      if (!response.ok) {
+        throw new LeonardoApiError(response.status, response.statusText, text);
+      }
+      if (!text) {
+        return {};
+      }
+      try {
+        return JSON.parse(text) as JsonObject;
+      } catch {
+        return { text };
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error(`Leonardo API request timed out after ${timeoutMs / 1000}s`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -109,18 +126,30 @@ export class LeonardoClient {
       init.body = JSON.stringify(options.body);
     }
 
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, init);
-    const text = await response.text();
-    if (!response.ok) {
-      throw new LeonardoApiError(response.status, response.statusText, text);
-    }
-    if (!text) {
-      return {};
-    }
+    const controller = new AbortController();
+    const timeoutMs = this.fetchTimeoutMs;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return JSON.parse(text) as JsonObject;
-    } catch {
-      return { text };
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, signal: controller.signal });
+      const text = await response.text();
+      if (!response.ok) {
+        throw new LeonardoApiError(response.status, response.statusText, text);
+      }
+      if (!text) {
+        return {};
+      }
+      try {
+        return JSON.parse(text) as JsonObject;
+      } catch {
+        return { text };
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error(`Leonardo API request timed out after ${timeoutMs / 1000}s`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 }

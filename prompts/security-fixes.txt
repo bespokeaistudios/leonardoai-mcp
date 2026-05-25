@@ -1,0 +1,99 @@
+Security & Production Hardening — leonardoai-mcp v0.3.0
+
+Working directory: /home/kyle/leonardo-mcp
+Test command: npm run build && npm test && npm run typecheck
+
+Apply these 7 fixes in order. After each fix, run the test suite. Do NOT push to git.
+
+## Fix 1: HTTPS-only + CDN-domain allowlist on download_image (SSRF)
+
+In src/tools.ts and src/leonardo-client.ts, add URL allowlisting before any download:
+
+- `downloadUrl()` must reject non-HTTPS URLs (only https:// scheme allowed)
+- `downloadUrl()` must validate the hostname is cdn.leonardo.ai OR a known Leonardo CDN domain
+- Add a ALLOWED_DOWNLOAD_HOSTS set: ['cdn.leonardo.ai']
+- If a non-HTTPS or non-allowlisted URL is passed, throw a clear error: "Blocked URL: only HTTPS downloads from cdn.leonardo.ai are allowed"
+
+Also update the existing `validateDownloadUrl()` function to include this check.
+
+Note: The code already has HTTPS enforcement and SSRF protection in validateDownloadUrl() — add the hostname allowlist check there.
+
+## Fix 2: Strip sensitive fields from raw response passthrough
+
+In src/tools.ts, add a `sanitizeRaw()` helper:
+
+- Strip these keys from raw response objects before returning them: 'apiKey', 'token', 'signedUrl', 'signed_url', 'uploadUrl', 'upload_url', 'presignedUrl', 'presigned_url', 'authorization', 'x-api-key'
+- The function should recursively walk objects (but max depth 5 to avoid circular refs)
+- Apply sanitizeRaw() to all raw fields returned by tool handlers: generate_image, get_generation, wait_for_generation, generate_image_and_wait, list_models, motion_generation, upload_init_image, get_init_image
+- Keep raw structure intact, just strip known sensitive key names
+
+## Fix 3: Enforce minimum poll_interval_ms (2,000 ms floor)
+
+In src/tools.ts, in `waitForGeneration` and `generate_image_and_wait`:
+
+- Add a hard server-side floor: `const MIN_POLL_INTERVAL_MS = 2000;`
+- If caller's poll_interval_ms is less than the floor, clamp it to MIN_POLL_INTERVAL_MS
+- Apply in both wait_for_generation and generate_image_and_wait handlers
+- Document the implicit floor in the tool schema descriptions if possible (Zod describe strings)
+
+## Fix 4: Document secure config file permissions
+
+In README.md and docs/AGENT_INTEGRATION_GUIDE.md:
+
+- After the Claude Desktop config example, add:
+  ```
+  **⚠️ Secure your config file:**
+  ```
+  ```
+  chmod 600 ~/Library/Application\ Support/Claude/claude_desktop_config.json  # macOS
+  chmod 600 ~/.config/Claude/claude_desktop_config.json  # Linux
+  ```
+  Do NOT commit this file to version control — add it to your global `.gitignore`.
+  ```
+- Add a similar note in AGENT_INTEGRATION_GUIDE.md near the config example if one exists
+- Add to README: "Exclude your MCP config from iCloud/Dropbox/BackBlaze sync if it contains API keys"
+
+## Fix 5: Log which env var resolved the API key at startup
+
+In src/server.ts or wherever the API key is resolved (check src/config.ts or the server entry point):
+
+- Log to stderr at startup: `[leonardo-mcp] Using API key from $VAR_NAME`
+- If both LEONARDO_AI_API and LEONARDO_API_KEY are set, log which one was selected
+- Do NOT log the key value itself, only the variable name
+
+## Fix 6: Pin dependency versions
+
+In package.json:
+
+- Change all `^` ranges to exact versions (`"zod": "~4.4.3"` format using `~` for minor-level pinning)
+- For TypeScript: use `"typescript": "~5.7.0"` (TS 6 is too bleeding-edge, check what's actually installed)
+- For vitest, zod, @modelcontextprotocol/sdk: use `~` pinning
+- Run `npm install` after changes to update package-lock.json
+- Run `npm run build && npm run typecheck` to verify nothing breaks
+
+## Fix 7: Add AbortController-based fetch timeout
+
+In src/leonardo-client.ts:
+
+- Add a `DEFAULT_FETCH_TIMEOUT_MS = 30000` (30 seconds)
+- In both `request()` and `v2Request()` methods, wrap the fetch call with an AbortController timeout:
+  ```typescript
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_FETCH_TIMEOUT_MS);
+  try {
+    const response = await this.fetchImpl(url, { ...init, signal: controller.signal });
+    // ... existing code ...
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  ```
+- If aborted, throw a clear error: "Leonardo API request timed out after 30s"
+- Add a test to verify timeout behavior (mock fetch to hang, verify it rejects after timeout)
+
+## Final Verification
+
+After all fixes:
+1. Run `npm run build && npm test && npm run typecheck` — all must pass
+2. Run `npm run smoke:mcp` — all 10 tools must be discovered
+3. Report which tests were added/modified and the final test count
+4. List any files that were modified

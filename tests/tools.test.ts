@@ -31,7 +31,7 @@ describe('tool handlers', () => {
         generations_by_pk: {
           id: 'gen-abc',
           status: 'COMPLETE',
-          generated_images: [{ id: 'img-1', url: 'https://example.com/1.png' }],
+          generated_images: [{ id: 'img-1', url: 'https://cdn.leonardo.ai/1.png' }],
         },
       })),
     } as any;
@@ -39,7 +39,7 @@ describe('tool handlers', () => {
 
     const response = await handlers.get_generation({ generation_id: 'gen-abc' });
 
-    expect(response).toMatchObject({ generation_id: 'gen-abc', status: 'COMPLETE', images: [{ id: 'img-1', url: 'https://example.com/1.png' }] });
+    expect(response).toMatchObject({ generation_id: 'gen-abc', status: 'COMPLETE', images: [{ id: 'img-1', url: 'https://cdn.leonardo.ai/1.png' }] });
   });
 
   it('wait_for_generation polls until a generation has images', async () => {
@@ -51,13 +51,13 @@ describe('tool handlers', () => {
           generations_by_pk: {
             id: 'gen-abc',
             status: 'COMPLETE',
-            generated_images: [{ id: 'img-1', url: 'https://example.com/1.png' }],
+            generated_images: [{ id: 'img-1', url: 'https://cdn.leonardo.ai/1.png' }],
           },
         }),
     } as any;
     const handlers = createToolHandlers(client);
 
-    const response = await handlers.wait_for_generation({ generation_id: 'gen-abc', timeout_ms: 1000, poll_interval_ms: 1 });
+    const response = await handlers.wait_for_generation({ generation_id: 'gen-abc', timeout_ms: 5000, poll_interval_ms: 1 });
 
     expect(client.getGeneration).toHaveBeenCalledTimes(2);
     expect(response).toMatchObject({ generation_id: 'gen-abc', timed_out: false, images: [{ id: 'img-1' }] });
@@ -70,7 +70,7 @@ describe('tool handlers', () => {
         generations_by_pk: {
           id: 'gen-abc',
           status: 'COMPLETE',
-          generated_images: [{ id: 'img-1', url: 'https://example.com/1.png' }],
+          generated_images: [{ id: 'img-1', url: 'https://cdn.leonardo.ai/1.png' }],
         },
       })),
     } as any;
@@ -84,12 +84,12 @@ describe('tool handlers', () => {
         download: true,
         output_dir: outputDir,
         poll_interval_ms: 1,
-        timeout_ms: 1000,
+        timeout_ms: 5000,
       });
 
       expect(client.createGeneration).toHaveBeenCalledWith({ prompt: 'castle' });
       expect(client.getGeneration).toHaveBeenCalledWith('gen-abc');
-      expect(fetchMock).toHaveBeenCalledWith('https://example.com/1.png');
+      expect(fetchMock).toHaveBeenCalledWith('https://cdn.leonardo.ai/1.png');
       expect(response.generation_id).toBe('gen-abc');
       expect(response.downloaded?.[0]).toMatchObject({ id: 'img-1', bytes: 10 });
       await expect(readFile(response.downloaded![0].path, 'utf8')).resolves.toBe('fake image');
@@ -127,8 +127,8 @@ describe('tool handlers', () => {
           id: 'gen-abc',
           status: 'COMPLETE',
           generated_images: [
-            { id: 'img-1', url: 'https://example.com/1.png' },
-            { id: 'img-2', url: 'https://example.com/2.webp' },
+            { id: 'img-1', url: 'https://cdn.leonardo.ai/1.png' },
+            { id: 'img-2', url: 'https://cdn.leonardo.ai/2.webp' },
           ],
         },
       })),
@@ -293,7 +293,7 @@ describe('tool handlers', () => {
         generate: { generationId: 'gen-v2-wait', apiCreditCost: 26 },
       })),
       getGeneration: vi.fn(async () => ({
-        generations_by_pk: { id: 'gen-v2-wait', status: 'COMPLETE', generated_images: [{ id: 'img-1', url: 'https://example.com/1.png' }] },
+        generations_by_pk: { id: 'gen-v2-wait', status: 'COMPLETE', generated_images: [{ id: 'img-1', url: 'https://cdn.leonardo.ai/1.png' }] },
       })),
     } as any;
     const handlers = createToolHandlers(client);
@@ -309,7 +309,7 @@ describe('tool handlers', () => {
     expect(client.createGeneration).not.toHaveBeenCalled();
     expect(client.getGeneration).toHaveBeenCalledWith('gen-v2-wait');
     expect(response.generation_id).toBe('gen-v2-wait');
-    expect(response.images).toEqual([{ id: 'img-1', url: 'https://example.com/1.png' }]);
+    expect(response.images).toEqual([{ id: 'img-1', url: 'https://cdn.leonardo.ai/1.png' }]);
   });
 
   it('compactGenerationId extracts from v2 REST create response', async () => {
@@ -353,27 +353,33 @@ describe('tool handlers', () => {
   });
 
   describe('validateDownloadUrl (SSRF protection)', () => {
-    it('allows HTTPS URLs with public DNS resolution', async () => {
+    it('allows HTTPS URLs on allowed CDN domain with public DNS resolution', async () => {
       vi.mocked(dns.resolve).mockResolvedValue(['93.184.216.34']);
-      await expect(validateDownloadUrl('https://example.com/image.png')).resolves.toBeUndefined();
+      await expect(validateDownloadUrl('https://cdn.leonardo.ai/image.png')).resolves.toBeUndefined();
     });
 
     it('rejects HTTP URLs', async () => {
-      await expect(validateDownloadUrl('http://example.com/image.png')).rejects.toThrow(
+      await expect(validateDownloadUrl('http://cdn.leonardo.ai/image.png')).rejects.toThrow(
         'Blocked URL: only HTTPS scheme is allowed, got "http"',
       );
     });
 
-    it('rejects localhost URLs', async () => {
+    it('rejects non-allowlisted hostname', async () => {
+      await expect(validateDownloadUrl('https://example.com/image.png')).rejects.toThrow(
+        'Blocked URL: only HTTPS downloads from cdn.leonardo.ai are allowed',
+      );
+    });
+
+    it('rejects allowed hostname resolving to loopback IP', async () => {
       vi.mocked(dns.resolve).mockResolvedValue(['127.0.0.1']);
-      await expect(validateDownloadUrl('https://localhost/image.png')).rejects.toThrow(
+      await expect(validateDownloadUrl('https://cdn.leonardo.ai/image.png')).rejects.toThrow(
         'Blocked URL: resolved address 127.0.0.1 is a private, loopback, or link-local IP',
       );
     });
 
-    it('rejects private IP URLs', async () => {
-      vi.mocked(dns.resolve).mockRejectedValue(new Error('ENOTFOUND'));
-      await expect(validateDownloadUrl('https://192.168.1.1/test.png')).rejects.toThrow(
+    it('rejects allowed hostname resolving to private IP', async () => {
+      vi.mocked(dns.resolve).mockResolvedValue(['192.168.1.1']);
+      await expect(validateDownloadUrl('https://cdn.leonardo.ai/test.png')).rejects.toThrow(
         'Blocked URL: resolved address 192.168.1.1 is a private, loopback, or link-local IP',
       );
     });

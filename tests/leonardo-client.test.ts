@@ -82,4 +82,29 @@ describe('LeonardoClient', () => {
     await expect(client.listV2Models()).rejects.not.toThrow(/secret-key/);
     await expect(client.listV2Models()).rejects.not.toThrow(/unauthorized/);
   });
+
+  it('rejects with a timeout error when fetch hangs', async () => {
+    // Mock fetch that respects the AbortSignal: rejects with AbortError when aborted
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        if (init?.signal) {
+          if (init.signal.aborted) {
+            reject(new DOMException('Aborted', 'AbortError'));
+            return;
+          }
+          init.signal.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+        }
+        // Otherwise never resolve (simulates hang)
+      });
+    });
+    const client = new LeonardoClient({
+      apiKey: 'test-key',
+      fetch: fetchMock as typeof fetch,
+      fetchTimeoutMs: 50,
+    });
+
+    await expect(client.listModels()).rejects.toThrow(/timed out after 0\.05s/);
+  }, 5000);
 });

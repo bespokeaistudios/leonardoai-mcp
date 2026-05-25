@@ -58,6 +58,14 @@ mcp_servers:
 }
 ```
 
+**⚠️ Secure your config file:**
+```bash
+chmod 600 ~/Library/Application\ Support/Claude/claude_desktop_config.json  # macOS
+chmod 600 ~/.config/Claude/claude_desktop_config.json  # Linux
+```
+Do NOT commit this file to version control — add it to your global `.gitignore`.
+Exclude your MCP config from iCloud/Dropbox/BackBlaze sync if it contains API keys.
+
 ### 4. Use the tools
 
 Your agent model generates tool calls. The server responds with JSON. No polling loops needed — use `generate_image_and_wait` for the full create → poll → download flow in one tool call.

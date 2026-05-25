@@ -12,6 +12,8 @@ export function getApiKey(env: NodeJS.ProcessEnv = process.env): string {
       'Leonardo API key is required. Set LEONARDO_AI_API or LEONARDO_API_KEY in the MCP server environment.',
     );
   }
+  const source = env.LEONARDO_AI_API ? 'LEONARDO_AI_API' : 'LEONARDO_API_KEY';
+  console.error(`[leonardo-mcp] Using API key from $${source}`);
   return apiKey.trim();
 }
 

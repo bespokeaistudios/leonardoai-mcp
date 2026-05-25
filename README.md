@@ -91,6 +91,15 @@ mcp_servers:
 }
 ```
 
+**⚠️ Secure your config file:**
+```bash
+chmod 600 ~/Library/Application\ Support/Claude/claude_desktop_config.json  # macOS
+chmod 600 ~/.config/Claude/claude_desktop_config.json  # Linux
+```
+Do NOT commit this file to version control — add it to your global `.gitignore`.
+
+Exclude your MCP config from iCloud/Dropbox/BackBlaze sync if it contains API keys.
+
 **⚠️ Never commit this config file with your real API key.** Use an environment variable or secret manager instead. If you accidentally expose your key, rotate it immediately at [app.leonardo.ai](https://app.leonardo.ai).
 
 ### 4. Start creating
